@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Presentador por Gestos · VERONIX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#070a0e;
+    --panel:#0e141b;
+    --ink:#eaf2f4;
+    --muted:#7d8b94;
+    --teal:#23e0c8;
+    --violet:#a78bfa;
+    --line:rgba(255,255,255,.08);
+    --good:#23e0c8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(167,139,250,.12), transparent 60%),
+      radial-gradient(1000px 500px at 0% 110%, rgba(35,224,200,.10), transparent 60%),
+      var(--bg);
+    color:var(--ink);
+    font-family:"Sora",system-ui,sans-serif;
+    overflow:hidden;
+    user-select:none;
+  }
+
+  /* ---------- Pantalla de inicio ---------- */
+  #start{
+    position:fixed;inset:0;z-index:50;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:28px;text-align:center;padding:24px;
+    background:rgba(7,10,14,.92);backdrop-filter:blur(8px);
+  }
+  #start h1{
+    font-family:"Bricolage Grotesque",sans-serif;
+    font-weight:800;font-size:clamp(34px,6vw,68px);
+    letter-spacing:-.03em;line-height:.95;
+    background:linear-gradient(100deg,var(--teal),var(--violet));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  #start p{color:var(--muted);max-width:560px;font-weight:300;line-height:1.6}
+  .legend{
+    display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 22px;
+    text-align:left;font-size:13px;color:var(--muted);
+    background:var(--panel);border:1px solid var(--line);border-radius:16px;
+    padding:18px 22px;max-width:560px;
+  }
+  .legend b{color:var(--ink);font-weight:600}
+  .legend .g{font-size:18px;margin-right:8px}
+  button.go{
+    font-family:"Bricolage Grotesque",sans-serif;font-weight:700;
+    font-size:17px;letter-spacing:.01em;color:#06110f;
+    background:linear-gradient(100deg,var(--teal),#9be8da);
+    border:none;border-radius:999px;padding:16px 34px;cursor:pointer;
+    box-shadow:0 10px 40px rgba(35,224,200,.25);transition:transform .15s ease;
+  }
+  button.go:hover{transform:translateY(-2px)}
+  .hint{font-size:12px;color:var(--muted)}
+
+  /* ---------- Escenario ---------- */
+  #stage{position:fixed;inset:0;display:none}
+  #slides{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+  .slide{
+    position:absolute;inset:0;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:7vw;text-align:center;gap:24px;
+    opacity:0;transform:scale(1.04) translateY(14px);
+    transition:opacity .5s ease, transform .6s cubic-bezier(.16,1,.3,1);
+    pointer-events:none;
+  }
+  .slide.active{opacity:1;transform:scale(1) translateY(0)}
+  .slide.zoomed{transform:scale(1.35)}
+  .slide .kicker{
+    font-size:14px;letter-spacing:.32em;text-transform:uppercase;color:var(--teal);font-weight:500;
+  }
+  .slide h2{
+    font-family:"Bricolage Grotesque",sans-serif;font-weight:800;
+    font-size:clamp(38px,7vw,92px);letter-spacing:-.03em;line-height:1;
+  }
+  .slide p{font-size:clamp(16px,2.4vw,26px);color:var(--muted);font-weight:300;max-width:18ch;line-height:1.5}
+  .slide .big{font-size:clamp(60px,14vw,180px);font-family:"Bricolage Grotesque";font-weight:800;
+    background:linear-gradient(100deg,var(--teal),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent}
+
+  /* Apagón / spotlight (palma abierta) */
+  #blackout{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;
+    transition:opacity .4s ease;z-index:8}
+  #blackout.on{opacity:.92}
+
+  /* Puntero láser */
+  #laser{position:absolute;width:26px;height:26px;border-radius:50%;
+    background:radial-gradient(circle,rgba(255,60,60,.95),rgba(255,60,60,.25) 60%,transparent 70%);
+    box-shadow:0 0 24px 6px rgba(255,40,40,.55);
+    transform:translate(-50%,-50%);left:-100px;top:-100px;z-index:12;
+    pointer-events:none;transition:opacity .2s ease;opacity:0}
+  #laser.on{opacity:1}
+
+  /* Confeti */
+  #fx{position:absolute;inset:0;z-index:11;pointer-events:none}
+
+  /* ---------- Cámara (PiP) ---------- */
+  #cam-wrap{
+    position:absolute;right:22px;bottom:22px;width:230px;height:173px;z-index:20;
+    border-radius:18px;overflow:hidden;border:1px solid var(--line);
+    box-shadow:0 18px 50px rgba(0,0,0,.5);background:#000;
+  }
+  #cam{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+  #cam.no-mirror{transform:none}
+  #cam-wrap .tag{
+    position:absolute;left:10px;top:9px;z-index:2;font-size:10px;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--muted);
+    background:rgba(0,0,0,.4);padding:3px 8px;border-radius:999px;backdrop-filter:blur(4px)}
+  #gesture-badge{
+    position:absolute;left:0;right:0;bottom:0;z-index:2;
+    font-size:12px;font-weight:600;text-align:center;padding:7px;
+    background:linear-gradient(0deg,rgba(0,0,0,.85),transparent);
+    color:var(--teal);letter-spacing:.04em}
+
+  /* ---------- HUD ---------- */
+  #hud{position:absolute;left:22px;bottom:22px;z-index:20;display:flex;gap:10px;align-items:center}
+  .pill{
+    background:var(--panel);border:1px solid var(--line);border-radius:999px;
+    padding:9px 16px;font-size:13px;color:var(--muted);display:flex;gap:8px;align-items:center}
+  .pill b{color:var(--ink);font-weight:600}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+  .dot.live{background:var(--good);box-shadow:0 0 10px var(--good);animation:pulse 1.6s infinite}
+  @keyframes pulse{50%{opacity:.4}}
+  .ctrl{cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);
+    border-radius:10px;padding:9px 12px;font-size:13px;font-family:inherit}
+  .ctrl:hover{border-color:var(--teal)}
+
+  #toast{position:absolute;top:24px;left:50%;transform:translateX(-50%) translateY(-20px);
+    z-index:30;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:11px 20px;font-size:14px;font-weight:500;opacity:0;transition:.25s ease;
+    box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast .g{font-size:18px;margin-right:8px}
+
+  /* Vista general (overview) */
+  #overview{position:absolute;inset:0;z-index:25;background:rgba(7,10,14,.96);
+    backdrop-filter:blur(10px);display:none;padding:5vh 5vw;overflow:auto}
+  #overview.on{display:block}
+  #overview h3{font-family:"Bricolage Grotesque";font-weight:700;margin-bottom:24px;color:var(--muted);
+    font-size:13px;letter-spacing:.28em;text-transform:uppercase}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:18px}
+  .thumb{aspect-ratio:16/9;border:1px solid var(--line);border-radius:14px;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+    background:var(--panel);transition:.18s ease;padding:16px;text-align:center}
+  .thumb:hover{border-color:var(--teal);transform:translateY(-3px)}
+  .thumb.cur{border-color:var(--violet);box-shadow:0 0 0 1px var(--violet)}
+  .thumb .n{font-size:11px;color:var(--muted)}
+  .thumb .t{font-family:"Bricolage Grotesque";font-weight:700;font-size:18px;line-height:1.1}
+
+  /* Panel de ajustes */
+  #settings{position:absolute;top:22px;right:22px;z-index:24;background:var(--panel);
+    border:1px solid var(--line);border-radius:16px;padding:18px 20px;width:280px;display:none}
+  #settings.on{display:block}
+  #settings h4{font-family:"Bricolage Grotesque";font-weight:700;margin-bottom:14px;font-size:15px}
+  .row{display:flex;justify-content:space-between;align-items:center;margin:12px 0;font-size:13px;color:var(--muted)}
+  .row input[type=range]{width:130px;accent-color:var(--teal)}
+  .switch{cursor:pointer;color:var(--teal);font-weight:600}
+  #gear{position:absolute;top:22px;right:22px;z-index:23}
+</style>
+</head>
+<body>
+
+<!-- ===== INICIO ===== -->
+<div id="start">
+  <h1>Presentador<br>por Gestos</h1>
+  <p>Controla tus diapositivas con la mano frente a la cámara. Funciona 100% en tu navegador — nada se sube a ningún servidor.</p>
+  <div class="legend">
+    <div><span class="g">👋</span><b>Mano abierta hacia los lados</b> · siguiente / anterior</div>
+    <div><span class="g">☝️</span><b>Índice arriba</b> · puntero láser</div>
+    <div><span class="g">✊</span><b>Puño cerrado</b> · zoom a la diapositiva</div>
+    <div><span class="g">✋</span><b>Palma fija (2s)</b> · apagón / pausa</div>
+    <div><span class="g">✌️</span><b>Dos dedos</b> · vista general</div>
+    <div><span class="g">👍</span><b>Pulgar arriba</b> · efecto confeti</div>
+  </div>
+  <button class="go" id="startBtn">Iniciar cámara y presentar</button>
+  <p class="hint">Atajos de teclado: ← → cambiar · F pantalla completa · O vista general</p>
+</div>
+
+<!-- ===== ESCENARIO ===== -->
+<div id="stage">
+  <div id="slides"></div>
+  <div id="blackout"></div>
+  <div id="laser"></div>
+  <canvas id="fx"></canvas>
+
+  <div id="cam-wrap">
+    <span class="tag">Cámara</span>
+    <video id="cam" autoplay playsinline muted></video>
+    <div id="gesture-badge">esperando…</div>
+  </div>
+
+  <div id="hud">
+    <span class="pill"><span class="dot" id="status-dot"></span><b id="slide-num">1</b> / <span id="slide-total">1</span></span>
+    <button class="ctrl" id="overviewBtn">Vista general</button>
+    <button class="ctrl" id="fsBtn">Pantalla completa</button>
+  </div>
+
+  <div id="gear"><button class="ctrl" id="gearBtn">⚙ Ajustes</button></div>
+  <div id="settings">
+    <h4>Ajustes</h4>
+    <div class="row"><span>Sensibilidad de swipe</span><input type="range" id="sens" min="0.06" max="0.30" step="0.01" value="0.14"></div>
+    <div class="row"><span>Espejar cámara</span><span class="switch" id="mirrorToggle">Sí</span></div>
+    <div class="row"><span>Espejar puntero</span><span class="switch" id="laserMirrorToggle">Sí</span></div>
+    <div class="row"><span>Cooldown gestos (ms)</span><input type="range" id="cool" min="500" max="2000" step="100" value="1000"></div>
+  </div>
+
+  <div id="toast"></div>
+
+  <div id="overview"><h3>Diapositivas</h3><div class="grid" id="grid"></div></div>
+</div>
+
+<script type="module">
+import { GestureRecognizer, FilesetResolver }
+  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18";
+
+/* =========================================================
+   1) TUS DIAPOSITIVAS  —  edita libremente este arreglo.
+   Cada slide acepta HTML. Usa las clases: kicker, big, etc.
+   ========================================================= */
+const SLIDES = [
+  { title:"VERONIX", html:`<div class="kicker">Inteligencia Tecnológica</div><h2>VERONIX</h2><p>Presentación controlada con la mano</p>` },
+  { title:"El problema", html:`<div class="kicker">Contexto</div><h2>El reto</h2><p>Hablar y manejar el clicker a la vez rompe el ritmo</p>` },
+  { title:"La solución", html:`<div class="kicker">Propuesta</div><h2>Gestos en vivo</h2><p>Tu mano es el control remoto</p>` },
+  { title:"Resultado", html:`<div class="kicker">Impacto</div><div class="big">+38%</div><p>de atención de la audiencia</p>` },
+  { title:"Cierre", html:`<div class="kicker">Gracias</div><h2>¿Conversamos?</h2><p>alexis@veronix.ai</p>` },
+];
+
+/* ===== Estado ===== */
+let recognizer, video, raf, running=false;
+let idx=0, zoomed=false, blackout=false, overviewOn=false;
+let lastTrigger=0;          // cooldown global de gestos estáticos
+let swipeArmed=true;        // evita doble disparo de swipe
+const posBuf=[];            // buffer de posiciones para detectar swipe
+let lastVideoTime=-1;
+const cfg = { sens:0.14, cooldown:1000, mirrorCam:true, mirrorLaser:true };
+
+/* ===== Refs ===== */
+const $ = s => document.querySelector(s);
+const slidesEl=$("#slides"), badge=$("#gesture-badge"), toastEl=$("#toast");
+const laserEl=$("#laser"), blackoutEl=$("#blackout"), statusDot=$("#status-dot");
+
+/* ===== Construir slides + overview ===== */
+function buildSlides(){
+  slidesEl.innerHTML="";
+  const grid=$("#grid"); grid.innerHTML="";
+  SLIDES.forEach((s,i)=>{
+    const d=document.createElement("div");
+    d.className="slide"+(i===0?" active":"");
+    d.innerHTML=s.html; slidesEl.appendChild(d);
+
+    const t=document.createElement("div");
+    t.className="thumb"+(i===0?" cur":"");
+    t.innerHTML=`<div class="n">${i+1}</div><div class="t">${s.title}</div>`;
+    t.onclick=()=>{goTo(i); toggleOverview(false);};
+    grid.appendChild(t);
+  });
+  $("#slide-total").textContent=SLIDES.length;
+}
+
+function refreshActive(){
+  document.querySelectorAll(".slide").forEach((el,i)=>{
+    el.classList.toggle("active", i===idx);
+    el.classList.toggle("zoomed", i===idx && zoomed);
+  });
+  document.querySelectorAll(".thumb").forEach((el,i)=>el.classList.toggle("cur", i===idx));
+  $("#slide-num").textContent=idx+1;
+}
+
+function goTo(n){
+  const next=Math.max(0,Math.min(SLIDES.length-1,n));
+  if(next===idx) return;
+  zoomed=false; idx=next; refreshActive();
+}
+function nextSlide(){ if(idx<SLIDES.length-1){goTo(idx+1); toast("👉","Siguiente");} }
+function prevSlide(){ if(idx>0){goTo(idx-1); toast("👈","Anterior");} }
+
+/* ===== Toast ===== */
+let toastT;
+function toast(g,txt){
+  toastEl.innerHTML=`<span class="g">${g}</span>${txt}`;
+  toastEl.classList.add("show");
+  clearTimeout(toastT); toastT=setTimeout(()=>toastEl.classList.remove("show"),1100);
+}
+
+/* ===== Efectos ===== */
+function toggleZoom(){ zoomed=!zoomed; refreshActive(); toast("✊", zoomed?"Zoom +":"Zoom normal"); }
+function toggleBlackout(force){
+  blackout = force!==undefined ? force : !blackout;
+  blackoutEl.classList.toggle("on", blackout);
+  toast("✋", blackout?"Apagón":"Reanudar");
+}
+function toggleOverview(force){
+  overviewOn = force!==undefined ? force : !overviewOn;
+  $("#overview").classList.toggle("on", overviewOn);
+}
+
+/* ===== Confeti ===== */
+const fx=$("#fx"), fxCtx=fx.getContext("2d");
+let parts=[], fxRunning=false;
+function resizeFx(){ fx.width=innerWidth; fx.height=innerHeight; }
+addEventListener("resize", resizeFx); resizeFx();
+function confetti(){
+  const colors=["#23e0c8","#a78bfa","#ffd166","#ef476f","#fff"];
+  for(let i=0;i<140;i++){
+    parts.push({x:innerWidth/2,y:innerHeight/2,
+      vx:(Math.random()-.5)*16, vy:(Math.random()-.9)*16,
+      g:.4, s:5+Math.random()*7, c:colors[i%colors.length], life:1});
+  }
+  toast("🎉","¡Confeti!");
+  if(!fxRunning){ fxRunning=true; tickFx(); }
+}
+function tickFx(){
+  fxCtx.clearRect(0,0,fx.width,fx.height);
+  parts.forEach(p=>{ p.vy+=p.g; p.x+=p.vx; p.y+=p.vy; p.life-=.012;
+    fxCtx.globalAlpha=Math.max(0,p.life); fxCtx.fillStyle=p.c;
+    fxCtx.fillRect(p.x,p.y,p.s,p.s); });
+  parts=parts.filter(p=>p.life>0 && p.y<fx.height+40);
+  if(parts.length){ requestAnimationFrame(tickFx); }
+  else { fxCtx.clearRect(0,0,fx.width,fx.height); fxRunning=false; }
+}
+
+/* ===== Puntero láser ===== */
+function moveLaser(tip){
+  if(!tip){ laserEl.classList.remove("on"); return; }
+  let x = cfg.mirrorLaser ? (1-tip.x) : tip.x;
+  laserEl.style.left = x*innerWidth + "px";
+  laserEl.style.top  = tip.y*innerHeight + "px";
+  laserEl.classList.add("on");
+}
+
+/* =========================================================
+   2) DETECCIÓN DE GESTOS
+   ========================================================= */
+async function initRecognizer(){
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm");
+  recognizer = await GestureRecognizer.createFromOptions(vision, {
+    baseOptions:{
+      modelAssetPath:"https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+      delegate:"GPU"
+    },
+    runningMode:"VIDEO", numHands:1
+  });
+}
+
+function handleGesture(name, landmarks, now){
+  const tip = landmarks ? landmarks[8] : null;  // punta del índice
+  badge.textContent = name || "—";
+
+  // --- Puntero láser (índice arriba) ---
+  if(name==="Pointing_Up"){ moveLaser(tip); }
+  else { moveLaser(null); }
+
+  // --- Detección de SWIPE con mano abierta ---
+  if(name==="Open_Palm" && tip){
+    posBuf.push({x:tip.x, t:now});
+    while(posBuf.length>1 && now-posBuf[0].t>300) posBuf.shift();
+    if(posBuf.length>=2){
+      const dx = posBuf[posBuf.length-1].x - posBuf[0].x;  // coord. de imagen (no espejada)
+      if(swipeArmed && Math.abs(dx)>cfg.sens){
+        // En coords de imagen, mover la mano a tu derecha => x disminuye (cam espejada)
+        if(dx<0) nextSlide(); else prevSlide();
+        swipeArmed=false; posBuf.length=0;
+        setTimeout(()=>{swipeArmed=true;}, cfg.cooldown);
+      }
+    }
+  } else { posBuf.length=0; }
+
+  // --- Gestos estáticos con cooldown ---
+  if(now-lastTrigger < cfg.cooldown) return;
+  if(name==="Closed_Fist"){ toggleZoom(); lastTrigger=now; }
+  else if(name==="Open_Palm"){ /* manejado arriba como swipe; palma fija no dispara apagón aquí */ }
+  else if(name==="Victory"){ toggleOverview(); lastTrigger=now; }
+  else if(name==="Thumb_Up"){ confetti(); lastTrigger=now; }
+}
+
+/* Palma quieta sostenida => apagón (medido aparte) */
+let palmStart=0;
+function checkSustainedPalm(name, now){
+  if(name==="Open_Palm" && posBuf.length){
+    const moving = posBuf.length>=2 &&
+      Math.abs(posBuf[posBuf.length-1].x - posBuf[0].x) > 0.03;
+    if(!moving){ if(!palmStart) palmStart=now;
+      if(now-palmStart>2000 && now-lastTrigger>cfg.cooldown){
+        toggleBlackout(); lastTrigger=now; palmStart=0; }
+    } else palmStart=0;
+  } else palmStart=0;
+}
+
+/* ===== Loop de render ===== */
+function loop(){
+  if(!running) return;
+  const now=performance.now();
+  if(video.currentTime!==lastVideoTime && recognizer){
+    lastVideoTime=video.currentTime;
+    const res=recognizer.recognizeForVideo(video, now);
+    const g = res.gestures?.[0]?.[0];
+    const name = g && g.score>0.5 ? g.categoryName : (res.landmarks?.[0] ? "Hand" : null);
+    const lm = res.landmarks?.[0] || null;
+    handleGesture(name, lm, now);
+    checkSustainedPalm(name, now);
+    statusDot.classList.toggle("live", !!lm);
+  }
+  raf=requestAnimationFrame(loop);
+}
+
+/* =========================================================
+   3) ARRANQUE
+   ========================================================= */
+async function start(){
+  buildSlides();
+  $("#start").style.display="none";
+  $("#stage").style.display="block";
+  badge.textContent="cargando IA…";
+  try{
+    video=$("#cam");
+    const stream=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480}});
+    video.srcObject=stream;
+    await video.play();
+    await initRecognizer();
+    running=true; loop();
+    badge.textContent="listo · mueve la mano";
+    toast("✅","Cámara activa");
+  }catch(e){
+    badge.textContent="error de cámara";
+    alert("No se pudo iniciar la cámara o el modelo.\n\n"+e.message+
+      "\n\nRevisa que diste permiso de cámara y que tienes conexión (el modelo se descarga la 1ª vez).");
+  }
+}
+
+/* ===== Eventos UI ===== */
+$("#startBtn").onclick=start;
+$("#overviewBtn").onclick=()=>toggleOverview();
+$("#fsBtn").onclick=toggleFs;
+$("#gearBtn").onclick=()=>$("#settings").classList.toggle("on");
+$("#sens").oninput=e=>cfg.sens=parseFloat(e.target.value);
+$("#cool").oninput=e=>cfg.cooldown=parseInt(e.target.value);
+$("#mirrorToggle").onclick=e=>{cfg.mirrorCam=!cfg.mirrorCam;
+  $("#cam").classList.toggle("no-mirror",!cfg.mirrorCam); e.target.textContent=cfg.mirrorCam?"Sí":"No";};
+$("#laserMirrorToggle").onclick=e=>{cfg.mirrorLaser=!cfg.mirrorLaser; e.target.textContent=cfg.mirrorLaser?"Sí":"No";};
+
+function toggleFs(){ if(!document.fullscreenElement) document.documentElement.requestFullscreen(); else document.exitFullscreen(); }
+
+/* ===== Teclado (respaldo) ===== */
+addEventListener("keydown",e=>{
+  if($("#start").style.display!=="none") return;
+  if(e.key==="ArrowRight"||e.key===" ") nextSlide();
+  else if(e.key==="ArrowLeft") prevSlide();
+  else if(e.key.toLowerCase()==="f") toggleFs();
+  else if(e.key.toLowerCase()==="o") toggleOverview();
+  else if(e.key.toLowerCase()==="b") toggleBlackout();
+  else if(e.key.toLowerCase()==="z") toggleZoom();
+});
+</script>
+</body>
+</html>
