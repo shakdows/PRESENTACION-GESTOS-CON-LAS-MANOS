@@ -175,12 +175,12 @@
   <h1>Presentador<br>por Gestos</h1>
   <p>Controla tus diapositivas con la mano frente a la cámara. Funciona 100% en tu navegador — nada se sube a ningún servidor.</p>
   <div class="legend">
-    <div><span class="g">👋</span><b>Mano abierta hacia los lados</b> · siguiente / anterior</div>
-    <div><span class="g">☝️</span><b>Índice arriba</b> · puntero láser</div>
+    <div><span class="g">👉</span><b>Índice apuntando a la derecha</b> · siguiente</div>
+    <div><span class="g">👈</span><b>Índice apuntando a la izquierda</b> · anterior</div>
+    <div><span class="g">☝️</span><b>Índice hacia arriba</b> · puntero láser</div>
     <div><span class="g">✊</span><b>Puño cerrado</b> · zoom a la diapositiva</div>
     <div><span class="g">✋</span><b>Palma fija (2s)</b> · apagón / pausa</div>
     <div><span class="g">✌️</span><b>Dos dedos</b> · vista general</div>
-    <div><span class="g">👍</span><b>Pulgar arriba</b> · efecto confeti</div>
   </div>
   <button class="go" id="startBtn">Iniciar cámara y presentar</button>
   <p class="hint">Atajos de teclado: ← → cambiar · F pantalla completa · O vista general</p>
@@ -208,7 +208,7 @@
   <div id="gear"><button class="ctrl" id="gearBtn">⚙ Ajustes</button></div>
   <div id="settings">
     <h4>Ajustes</h4>
-    <div class="row"><span>Sensibilidad de swipe</span><input type="range" id="sens" min="0.06" max="0.30" step="0.01" value="0.14"></div>
+    <div class="row"><span>Invertir izquierda/derecha</span><span class="switch" id="invertToggle">No</span></div>
     <div class="row"><span>Espejar cámara</span><span class="switch" id="mirrorToggle">Sí</span></div>
     <div class="row"><span>Espejar puntero</span><span class="switch" id="laserMirrorToggle">Sí</span></div>
     <div class="row"><span>Cooldown gestos (ms)</span><input type="range" id="cool" min="500" max="2000" step="100" value="1000"></div>
@@ -242,7 +242,7 @@ let lastTrigger=0;          // cooldown global de gestos estáticos
 let swipeArmed=true;        // evita doble disparo de swipe
 const posBuf=[];            // buffer de posiciones para detectar swipe
 let lastVideoTime=-1;
-const cfg = { sens:0.14, cooldown:1000, mirrorCam:true, mirrorLaser:true };
+const cfg = { sens:0.12, cooldown:1000, mirrorCam:true, mirrorLaser:true, invertDir:false };
 
 /* ===== Refs ===== */
 const $ = s => document.querySelector(s);
@@ -353,47 +353,62 @@ async function initRecognizer(){
   });
 }
 
-function handleGesture(name, landmarks, now){
-  const tip = landmarks ? landmarks[8] : null;  // punta del índice
-  badge.textContent = name || "—";
+/* Distancia 2D entre dos landmarks */
+function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+/* ¿El dedo está extendido? (punta más lejos de la muñeca que su nudillo medio) */
+function extended(lm, tip, pip){ return dist(lm[tip], lm[0]) > dist(lm[pip], lm[0])*1.05; }
 
-  // --- Puntero láser (índice arriba) ---
-  if(name==="Pointing_Up"){ moveLaser(tip); }
+let pointArmed=true;   // se rearma al bajar el dedo, evita avances en cadena
+
+function handleGesture(name, lm, now){
+  if(!lm){ moveLaser(null); badge.textContent="muestra tu mano ✋"; pointArmed=true; return; }
+
+  // Estado de cada dedo
+  const idx  = extended(lm,8,6);
+  const mid  = extended(lm,12,10);
+  const ring = extended(lm,16,14);
+  const pink = extended(lm,20,18);
+  const isPointing = idx && !mid;   // índice afuera + medio abajo (tolerante)
+
+  // Orientación del índice (coords de imagen)
+  const dx = lm[8].x - lm[5].x;
+  const dy = lm[8].y - lm[5].y;
+  const horizontal = Math.abs(dx) > Math.abs(dy);
+
+  // --- Puntero láser: índice apuntando hacia ARRIBA ---
+  if(isPointing && !horizontal && dy<0){ moveLaser(lm[8]); }
   else { moveLaser(null); }
 
-  // --- Detección de SWIPE con mano abierta ---
-  if(name==="Open_Palm" && tip){
-    posBuf.push({x:tip.x, t:now});
-    while(posBuf.length>1 && now-posBuf[0].t>300) posBuf.shift();
-    if(posBuf.length>=2){
-      const dx = posBuf[posBuf.length-1].x - posBuf[0].x;  // coord. de imagen (no espejada)
-      if(swipeArmed && Math.abs(dx)>cfg.sens){
-        // En coords de imagen, mover la mano a tu derecha => x disminuye (cam espejada)
-        if(dx<0) nextSlide(); else prevSlide();
-        swipeArmed=false; posBuf.length=0;
-        setTimeout(()=>{swipeArmed=true;}, cfg.cooldown);
-      }
+  // --- Cambio de slide: índice apuntando de LADO ---
+  if(isPointing && horizontal){
+    // En vista espejo, apuntar a tu derecha => dx<0 en coords de imagen
+    let goNext = cfg.invertDir ? dx>0 : dx<0;
+    badge.textContent = (goNext?"👉 siguiente":"👈 anterior") + (pointArmed?"":" ✓");
+    if(pointArmed && now-lastTrigger>cfg.cooldown){
+      goNext ? nextSlide() : prevSlide();
+      pointArmed=false; lastTrigger=now;
     }
-  } else { posBuf.length=0; }
+  } else {
+    if(!isPointing) pointArmed=true;   // rearmar al bajar/cambiar el dedo
+    if(isPointing && !horizontal && dy<0) badge.textContent="☝️ puntero láser";
+    else if(isPointing) badge.textContent="✔ índice detectado · apúntalo de lado";
+    else badge.textContent = "✋ saca solo el índice →";
+  }
 
-  // --- Gestos estáticos con cooldown ---
+  // --- Otros gestos estáticos con cooldown ---
   if(now-lastTrigger < cfg.cooldown) return;
   if(name==="Closed_Fist"){ toggleZoom(); lastTrigger=now; }
-  else if(name==="Open_Palm"){ /* manejado arriba como swipe; palma fija no dispara apagón aquí */ }
   else if(name==="Victory"){ toggleOverview(); lastTrigger=now; }
-  else if(name==="Thumb_Up"){ confetti(); lastTrigger=now; }
+  else if(name==="Thumb_Up" && !isPointing){ confetti(); lastTrigger=now; }
 }
 
-/* Palma quieta sostenida => apagón (medido aparte) */
+/* Palma abierta sostenida 2s => apagón */
 let palmStart=0;
 function checkSustainedPalm(name, now){
-  if(name==="Open_Palm" && posBuf.length){
-    const moving = posBuf.length>=2 &&
-      Math.abs(posBuf[posBuf.length-1].x - posBuf[0].x) > 0.03;
-    if(!moving){ if(!palmStart) palmStart=now;
-      if(now-palmStart>2000 && now-lastTrigger>cfg.cooldown){
-        toggleBlackout(); lastTrigger=now; palmStart=0; }
-    } else palmStart=0;
+  if(name==="Open_Palm"){
+    if(!palmStart) palmStart=now;
+    if(now-palmStart>2000 && now-lastTrigger>cfg.cooldown){
+      toggleBlackout(); lastTrigger=now; palmStart=0; }
   } else palmStart=0;
 }
 
@@ -461,6 +476,28 @@ async function start(){
     await video.play();
   }catch(e){
     badge.textContent="error de cámara";
+
+    // Diagnóstico avanzado para "no hay cámara": ¿el SO ve algún dispositivo?
+    if(e.name==="NotFoundError"){
+      let nCams=-1;
+      try{ const devs=await navigator.mediaDevices.enumerateDevices();
+           nCams=devs.filter(d=>d.kind==="videoinput").length; }catch(_){}
+      if(nCams===0){
+        return showError("Windows no ve ninguna cámara",
+          "El sistema operativo reporta <b>cero</b> cámaras. No es la app: es hardware o privacidad de Windows.",
+          "<li>Si es PC de escritorio sin webcam: conecta una cámara USB, o prueba desde tu laptop o celular.</li>"+
+          "<li>Configuración → Privacidad y seguridad → <b>Cámara</b>: enciende «Acceso a la cámara» y «Permitir que las apps de escritorio accedan».</li>"+
+          "<li>Revisa el obturador físico o la tecla Fn que apaga la cámara.</li>"+
+          "<li>Abre la app <b>Cámara</b> de Windows para confirmar si el equipo la detecta.</li>");
+      } else {
+        return showError("Hay una cámara, pero no se pudo abrir",
+          `El sistema detecta <b>${nCams}</b> cámara(s), pero el navegador no logró acceder.`,
+          "<li>Cierra cualquier app que la use (Zoom, Teams, app Cámara).</li>"+
+          "<li>Revisa el permiso de cámara del sitio (ícono en la barra de direcciones).</li>"+
+          "<li>Pulsa Reintentar.</li>");
+      }
+    }
+
     const map={
       NotAllowedError:["Permiso de cámara bloqueado",
         "Tu navegador no tiene permiso para usar la cámara en este sitio.",
@@ -472,9 +509,6 @@ async function start(){
         "<li>Cierra Zoom u otra app/pestaña que use la cámara.</li>"+
         "<li>Vuelve aquí y pulsa Reintentar.</li>"+
         "<li>Recuerda: una cámara física = una sola app a la vez.</li>"],
-      NotFoundError:["No se encontró ninguna cámara",
-        "No hay ninguna webcam disponible en este equipo.",
-        "<li>Conecta una cámara web.</li><li>Verifica que el sistema la reconozca.</li>"],
       OverconstrainedError:["Cámara incompatible",
         "La cámara no soporta la resolución pedida.","<li>Pulsa Reintentar (se ajustará automáticamente).</li>"]
     };
@@ -507,7 +541,7 @@ $("#startBtn").onclick=start;
 $("#overviewBtn").onclick=()=>toggleOverview();
 $("#fsBtn").onclick=toggleFs;
 $("#gearBtn").onclick=()=>$("#settings").classList.toggle("on");
-$("#sens").oninput=e=>cfg.sens=parseFloat(e.target.value);
+$("#invertToggle").onclick=e=>{cfg.invertDir=!cfg.invertDir; e.target.textContent=cfg.invertDir?"Sí":"No";};
 $("#cool").oninput=e=>cfg.cooldown=parseInt(e.target.value);
 $("#mirrorToggle").onclick=e=>{cfg.mirrorCam=!cfg.mirrorCam;
   $("#cam").classList.toggle("no-mirror",!cfg.mirrorCam); e.target.textContent=cfg.mirrorCam?"Sí":"No";};
