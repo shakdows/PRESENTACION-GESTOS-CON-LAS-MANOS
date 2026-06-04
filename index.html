@@ -417,25 +417,89 @@ function loop(){
 /* =========================================================
    3) ARRANQUE
    ========================================================= */
+// Panel de diagnóstico en pantalla (más fiable que un alert)
+function showError(titulo, detalle, pasos){
+  let el=$("#err");
+  if(!el){
+    el=document.createElement("div"); el.id="err";
+    el.style.cssText="position:absolute;inset:0;z-index:60;display:flex;align-items:center;"+
+      "justify-content:center;background:rgba(7,10,14,.96);backdrop-filter:blur(8px);padding:24px";
+    $("#stage").appendChild(el);
+  }
+  el.innerHTML=`<div style="max-width:520px;text-align:center;background:var(--panel);
+    border:1px solid var(--line);border-radius:20px;padding:34px 32px">
+    <div style="font-size:42px;margin-bottom:10px">📷</div>
+    <h2 style="font-family:'Bricolage Grotesque';font-weight:800;font-size:26px;margin-bottom:10px">${titulo}</h2>
+    <p style="color:var(--muted);font-weight:300;line-height:1.6;margin-bottom:18px">${detalle}</p>
+    <ol style="text-align:left;color:var(--muted);font-size:14px;line-height:1.7;margin:0 0 22px 18px">${pasos}</ol>
+    <button class="go" id="retryBtn">Reintentar</button>
+  </div>`;
+  el.style.display="flex";
+  $("#retryBtn").onclick=()=>{ el.style.display="none"; start(); };
+}
+
 async function start(){
   buildSlides();
   $("#start").style.display="none";
   $("#stage").style.display="block";
   badge.textContent="cargando IA…";
+
+  // 0) Contexto seguro (la cámara requiere HTTPS o localhost)
+  if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia){
+    badge.textContent="sin acceso a cámara";
+    return showError("El navegador no permite la cámara aquí",
+      "La cámara solo funciona sobre HTTPS o en localhost. Si abriste el archivo con doble clic (file://), Chrome bloquea la cámara.",
+      "<li>Si es archivo local: ábrelo desde <b>http://localhost</b> o súbelo a tu Vercel (ya tienes HTTPS).</li>"+
+      "<li>Si ya estás en Vercel, revisa que la URL empiece con <b>https://</b></li>");
+  }
+
+  // 1) Cámara — diagnóstico por tipo de error
   try{
     video=$("#cam");
     const stream=await navigator.mediaDevices.getUserMedia({video:{width:640,height:480}});
     video.srcObject=stream;
     await video.play();
-    await initRecognizer();
-    running=true; loop();
-    badge.textContent="listo · mueve la mano";
-    toast("✅","Cámara activa");
   }catch(e){
     badge.textContent="error de cámara";
-    alert("No se pudo iniciar la cámara o el modelo.\n\n"+e.message+
-      "\n\nRevisa que diste permiso de cámara y que tienes conexión (el modelo se descarga la 1ª vez).");
+    const map={
+      NotAllowedError:["Permiso de cámara bloqueado",
+        "Tu navegador no tiene permiso para usar la cámara en este sitio.",
+        "<li>Haz clic en el ícono de <b>cámara</b> en la barra de direcciones (arriba a la derecha).</li>"+
+        "<li>Elige <b>Permitir siempre</b> para este sitio.</li>"+
+        "<li>Recarga la página y pulsa Reintentar.</li>"],
+      NotReadableError:["La cámara está ocupada",
+        "Otra aplicación ya está usando la webcam (Zoom, Teams, Meet, otra pestaña…).",
+        "<li>Cierra Zoom u otra app/pestaña que use la cámara.</li>"+
+        "<li>Vuelve aquí y pulsa Reintentar.</li>"+
+        "<li>Recuerda: una cámara física = una sola app a la vez.</li>"],
+      NotFoundError:["No se encontró ninguna cámara",
+        "No hay ninguna webcam disponible en este equipo.",
+        "<li>Conecta una cámara web.</li><li>Verifica que el sistema la reconozca.</li>"],
+      OverconstrainedError:["Cámara incompatible",
+        "La cámara no soporta la resolución pedida.","<li>Pulsa Reintentar (se ajustará automáticamente).</li>"]
+    };
+    const [t,d,p]=map[e.name]||["No se pudo abrir la cámara",e.message||"Error desconocido.",
+      "<li>Revisa permisos y que no esté en uso por otra app.</li>"];
+    return showError(t,d,p);
   }
+
+  // 2) Modelo de IA — error separado de la cámara
+  badge.textContent="descargando modelo IA…";
+  try{
+    await initRecognizer();
+  }catch(e){
+    badge.textContent="error del modelo";
+    return showError("No se pudo cargar el motor de gestos",
+      "La cámara funciona, pero el modelo de IA de Google no se descargó (revisa tu conexión o un firewall que bloquee jsdelivr / googleapis).",
+      "<li>Verifica tu conexión a internet.</li>"+
+      "<li>Si estás en una red corporativa, prueba en otra red.</li>"+
+      "<li>Mientras tanto puedes usar el teclado: ← → para cambiar.</li>");
+  }
+
+  // 3) Todo OK
+  running=true; loop();
+  badge.textContent="listo · mueve la mano";
+  toast("✅","Cámara activa");
 }
 
 /* ===== Eventos UI ===== */
